@@ -7,12 +7,25 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 type PortRange struct {
 	Start int
 	End   int
+}
+
+type ScanResult struct {
+	Host string
+	Port int
+	Open bool
+}
+
+type ScanJob struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
 }
 
 const MaxPort = 65535
@@ -54,6 +67,7 @@ func scanPort(host string, port int, timeout time.Duration) bool {
 	conn, err := net.DialTimeout("tcp", address, timeout)
 
 	if err != nil {
+		// TODO: handle error more specifically
 		return false
 	}
 	defer conn.Close()
@@ -61,7 +75,9 @@ func scanPort(host string, port int, timeout time.Duration) bool {
 
 }
 
-func scanPorts(cfg *Config) {
+func scanPortsSequentially(cfg *Config) {
+
+	timerStart := time.Now()
 
 	for port := cfg.PortRange.Start; port <= cfg.PortRange.End; port++ {
 		scan := scanPort(cfg.Host, port, cfg.Timeout)
@@ -69,6 +85,68 @@ func scanPorts(cfg *Config) {
 			fmt.Printf("Open port %d\n", port)
 		}
 	}
+
+	scanTime := time.Since(timerStart)
+	fmt.Printf("Scan finished in %s\n", scanTime)
+}
+
+func scanPortWorker(jobs <-chan ScanJob, result chan<- ScanResult) {
+
+	for job := range jobs {
+		portOpen := scanPort(job.Host, job.Port, job.Timeout)
+		result <- ScanResult{
+			Host: job.Host,
+			Port: job.Port,
+			Open: portOpen,
+		}
+	}
+
+}
+
+func scanPorts(cfg *Config) {
+
+	timerStart := time.Now()
+
+	jobsChan := make(chan ScanJob)
+	resultChan := make(chan ScanResult)
+
+	// Run job worker
+	var wg sync.WaitGroup
+	for i := 0; i < cfg.Workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			scanPortWorker(jobsChan, resultChan)
+		}()
+
+	}
+
+	// Run producer
+	go func() {
+		defer close(jobsChan)
+		for port := cfg.PortRange.Start; port <= cfg.PortRange.End; port++ {
+			jobsChan <- ScanJob{
+				Host:    cfg.Host,
+				Port:    port,
+				Timeout: cfg.Timeout,
+			}
+		}
+	}()
+
+	go func() {
+		defer close(resultChan)
+		wg.Wait()
+	}()
+
+	for result := range resultChan {
+		if result.Open {
+			fmt.Printf("Open port %s:%d\n", result.Host, result.Port)
+		}
+	}
+
+	scanTime := time.Since(timerStart)
+	fmt.Printf("Scan finished in %s\n", scanTime)
+
 }
 
 func parseConfig() (Config, error) {
@@ -120,5 +198,10 @@ func main() {
 	fmt.Printf("Workers: %d\n", cfg.Workers)
 	fmt.Printf("Timeout: %s\n", cfg.Timeout)
 
+	//  Sync mode
+	// scanPortsSequentially(&cfg)
+
+	// Concurrent mode
 	scanPorts(&cfg)
+
 }
