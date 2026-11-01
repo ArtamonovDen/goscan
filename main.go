@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -47,12 +48,35 @@ type Config struct {
 	Timeout   time.Duration
 }
 
+func scanPort(host string, port int, timeout time.Duration) bool {
+	address := net.JoinHostPort(host, strconv.Itoa(port))
+
+	conn, err := net.DialTimeout("tcp", address, timeout)
+
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	return true
+
+}
+
+func scanPorts(cfg *Config) {
+
+	for port := cfg.PortRange.Start; port <= cfg.PortRange.End; port++ {
+		scan := scanPort(cfg.Host, port, cfg.Timeout)
+		if scan {
+			fmt.Printf("Open port %d\n", port)
+		}
+	}
+}
+
 func parseConfig() (Config, error) {
 
 	rawHost := flag.String("host", "127.0.0.1", "Target hostname or IP")
-	rawPorts := flag.String("ports", "1-1024", "Port range to scan")
+	rawPorts := flag.String("ports", "1-65535", "Port range to scan")
 	workers := flag.Int("workers", 1, "Number of concurrent workers")
-	timeout := flag.Duration("timeout", 60*time.Second, "Connection timeout (10s or 1m)")
+	timeout := flag.Duration("timeout", 10*time.Millisecond, "Connection timeout (10ms)")
 
 	flag.Parse()
 
@@ -90,8 +114,11 @@ func main() {
 		os.Exit(2)
 	}
 
+	fmt.Println("Runing scanner with config:")
 	fmt.Printf("Host: %s\n", cfg.Host)
 	fmt.Printf("Ports: %+v\n", cfg.PortRange)
 	fmt.Printf("Workers: %d\n", cfg.Workers)
 	fmt.Printf("Timeout: %s\n", cfg.Timeout)
+
+	scanPorts(&cfg)
 }
