@@ -1,0 +1,25 @@
+# Compiled binaries
+/goscan
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries and coverage
+*.test
+*.out
+coverage.html
+
+# Profiling
+*.prof
+*.pprof
+
+# IDE / Editor
+.idea/
+.vscode/
+.DS_Store
+
+# Local environment
+.env
+.env.*
